@@ -73,9 +73,11 @@ else:
             reals = conn.table("reals").select("id,content,is_training_sample").eq("game",game["id"]).execute().data
             st.dataframe(reals, use_container_width=True)
             
-            new_sample = st.text_input("New sample to add")
-            if st.button("Add new sample"):
-                conn.table("reals").upsert({"content": new_sample, "game": game["id"]}).execute()
+            new_sample = st.text_area("New samples to add (one per line)")
+            if st.button("Add new samples"):
+                samples = new_sample.split("\n")
+                for sample in samples:
+                    conn.table("reals").upsert({"content": sample, "game": game["id"]}).execute()
                 st.rerun()
             sample_to_delete = st.selectbox("Sample to delete", [real["content"] for real in reals])
             if st.button("Delete sample"):
@@ -83,7 +85,7 @@ else:
                 conn.table("reals").delete().eq("id",sample_id).execute()
                 st.rerun()
             num_training_samples = st.number_input("Number of training samples",min_value=0,max_value=len(reals))
-            if st.button("Sample training samples"):
+            if st.button("Select training samples"):
                 reals_ids = [real["id"] for real in reals]
                 shuffle(reals_ids)
                 training_samples = reals_ids[:num_training_samples]
@@ -130,7 +132,7 @@ else:
         if game["phase"] == "discrimination":
             st.header("Discrimination phase")
             classifications = conn.table("classifications").select("sample_id,isreal").eq("team",team["id"]).execute().data
-            st.dataframe(classifications, use_container_width=True)
+            #st.dataframe(classifications, use_container_width=True)
             reals = conn.table("reals").select("id,content").eq("game",game["id"]).eq("is_training_sample",False).execute().data
             other_teams = conn.table("teams").select("*").eq("game",game["id"]).neq("id",team["id"]).execute().data
             fakes = []
