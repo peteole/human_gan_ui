@@ -4,6 +4,7 @@ from random import shuffle
 
 
 conn = st.connection("supabase",type=SupabaseConnection)
+st.markdown("[Documentation](https://github.com/peteole/human_gan_ui)")
 
 if "game_id" not in st.query_params:
     new_game_name = st.text_input("Name of new game", "my game")
