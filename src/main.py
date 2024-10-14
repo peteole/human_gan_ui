@@ -92,6 +92,18 @@ else:
                     is_training_sample = sid in training_samples
                     conn.table("reals").update({"is_training_sample": is_training_sample}).eq("id",sid).execute()
                 st.rerun()
+        if game["phase"] == "generation":
+            all_teams = conn.table("teams").select("*").eq("game",game["id"]).execute().data
+            for t in all_teams:
+                fakes = conn.table("fakes").select("id,content").eq("team",t["id"]).execute().data
+                st.header(f"Fakes for team {t['name']}")
+                st.dataframe(fakes, use_container_width=True)
+        if game["phase"] == "discrimination":
+            all_teams = conn.table("teams").select("*").eq("game",game["id"]).execute().data
+            for t in all_teams:
+                classifications = conn.table("classifications").select("sample_id,isreal").eq("team",t["id"]).execute().data
+                st.header(f"Classifications for team {t['name']}")
+                st.dataframe(classifications, use_container_width=True)
             
     if "team_password" in st.query_params:
         team = conn.table("teams").select("*").eq("password",st.query_params["team_password"]).execute().data[0]
@@ -161,8 +173,10 @@ else:
             reals = conn.table("reals").select("id,content").eq("game",game["id"]).eq("is_training_sample",False).execute().data
             all_teams = conn.table("teams").select("*").eq("game",game["id"]).execute().data
             fakes_by_team = {}
+            classification_by_team = {}
             for t in all_teams:
                 fakes_by_team[t["id"]] = conn.table("fakes").select("id,content").eq("team",t["id"]).execute().data
+                classification_by_team[t["id"]] = conn.table("classifications").select("sample_id,isreal").eq("team",t["id"]).execute().data
             def get_origin(sample_id):
                 for t in all_teams:
                     for fake in fakes_by_team[t["id"]]:
@@ -184,19 +198,40 @@ else:
                         return t["name"]
                 return "unknown"
             
-            # reals = [{'content': real['content'], 'classification': get_classification(real["id"]),"real origin":get_origin(real["id"])} for real in reals]
             all_samples = []
+            correctly_classified_reals = 0
             for real in reals:
                 classification = get_classification(real["id"])
+                if classification:
+                    correctly_classified_reals += 1
                 all_samples.append({'content': real['content'], 'classified as real': classification, "real origin":"real", "team": "real"})
             
-            for team in all_teams:
-                for fake in fakes_by_team[team["id"]]:
+            correctly_classified_fakes = 0
+            exposed_own_fakes = 0
+            for t in all_teams:
+                for fake in fakes_by_team[t["id"]]:
                     real_origin = get_origin(fake["id"])
                     classification = get_classification(fake["id"])
-                    all_samples.append({'content': fake['content'], 'classified as real': classification, "real origin":get_team_name(real_origin), "team": team["name"]})
+                    exposing_team_names = []
+                    for exposing_team in all_teams:
+                        if exposing_team["id"] == t["id"]:
+                            continue
+                        for c in classification_by_team[exposing_team["id"]]:
+                            if c["sample_id"] == fake["id"] and not c["isreal"]:
+                                exposing_team_names.append(exposing_team["name"])
+                                continue
+                    if t['id'] == team['id']:
+                        exposed_own_fakes += len(exposing_team_names)
+                    if not classification and t['id'] != team['id']:
+                        correctly_classified_fakes += 1
+                    all_samples.append({'content': fake['content'], 'classified as real': classification, "real origin":get_team_name(real_origin), "team": t["name"],"exposed by":', '.join(exposing_team_names)})
             shuffle(all_samples)
             st.dataframe(all_samples, use_container_width=True)
+            st.write(f"Correctly classified fakes: {correctly_classified_fakes}/{sum(len(fakes_by_team[t["id"]]) for t in all_teams if t["id"] != team["id"])}")
+            st.write(f"Correctly classified reals: {correctly_classified_reals}/{len(reals)}")
+            st.write(f"Exposed own fakes: {exposed_own_fakes}/{len(fakes_by_team[team["id"]])}")
+            st.write(f"Total score: {correctly_classified_fakes + correctly_classified_reals - exposed_own_fakes}")
+                
             
     
 
