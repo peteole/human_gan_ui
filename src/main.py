@@ -121,7 +121,7 @@ else:
             st.header("Discrimination phase")
             classifications = conn.table("classifications").select("sample_id,isreal").eq("team",team["id"]).execute().data
             st.dataframe(classifications, use_container_width=True)
-            reals = conn.table("reals").select("id,content").eq("game",game["id"]).execute().data
+            reals = conn.table("reals").select("id,content").eq("game",game["id"]).eq("is_training_sample",False).execute().data
             other_teams = conn.table("teams").select("*").eq("game",game["id"]).neq("id",team["id"]).execute().data
             fakes = []
             for other_team in other_teams:
@@ -157,12 +157,6 @@ else:
                     else:
                         conn.table("classifications").insert({"sample_id": sample["id"], "isreal": classification == "real", "team": team["id"]}).execute()
                     st.rerun()
-            # all_samples = reals + fakes
-            # all_samples = all_samples.sort(key=lambda sample: sample["content"])
-            # for sample in all_samples:
-            #     is_real = st.radio(sample["content"],["real","fake"])
-            #     if st.button("Submit"):
-            #         conn.table("classifications").upsert({"sample_id": sample["id"], "isreal": is_real, "team": team["id"]}).execute()
-            #         st.rerun()
+
     
 
