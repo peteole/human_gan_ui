@@ -1,5 +1,6 @@
 import streamlit as st
 from st_supabase_connection import SupabaseConnection
+from random import shuffle
 
 
 conn = st.connection("supabase",type=SupabaseConnection)
@@ -71,7 +72,7 @@ else:
             st.rerun()
         if game["phase"] == "preparation":
             st.header("Prepare dataset")
-            reals = conn.table("reals").select("id,content").eq("game",game["id"]).execute().data
+            reals = conn.table("reals").select("id,content,is_training_sample").eq("game",game["id"]).execute().data
             st.dataframe(reals, use_container_width=True)
             
             new_sample = st.text_input("New sample to add")
@@ -83,6 +84,16 @@ else:
                 sample_id = [real["id"] for real in reals if real["content"] == sample_to_delete][0]
                 conn.table("reals").delete().eq("id",sample_id).execute()
                 st.rerun()
+            num_training_samples = st.number_input("Number of training samples",min_value=0,max_value=len(reals))
+            if st.button("Sample training samples"):
+                reals_ids = [real["id"] for real in reals]
+                shuffle(reals_ids)
+                training_samples = reals_ids[:num_training_samples]
+                for real in reals:
+                    sid = real["id"]
+                    is_training_sample = sid in training_samples
+                    conn.table("reals").update({"is_training_sample": is_training_sample}).eq("id",sid).execute()
+                st.rerun()
             
     if "team_password" in st.query_params:
         team = conn.table("teams").select("*").eq("password",st.query_params["team_password"]).execute().data[0]
@@ -91,6 +102,9 @@ else:
         st.code(st.query_params["team_password"],language="md")
         if game["phase"] == "generation":
             st.header("Generation phase")
+            st.header("Training samples")
+            training_samples = conn.table("reals").select("content").eq("game",game["id"]).eq("is_training_sample",True).execute().data
+            st.dataframe(training_samples, use_container_width=True)
             fake_sample= st.text_input("Fake sample to create")
             if st.button("Create fake sample"):
                 conn.table("fakes").upsert({"content": fake_sample, "team": team["id"]}).execute()
@@ -108,7 +122,10 @@ else:
             classifications = conn.table("classifications").select("sample_id,isreal").eq("team",team["id"]).execute().data
             st.dataframe(classifications, use_container_width=True)
             reals = conn.table("reals").select("id,content").eq("game",game["id"]).execute().data
-            fakes = conn.table("fakes").select("id,content").eq("team",team["id"]).execute().data
+            other_teams = conn.table("teams").select("*").eq("game",game["id"]).neq("id",team["id"]).execute().data
+            fakes = []
+            for other_team in other_teams:
+                fakes += conn.table("fakes").select("id,content").eq("team",other_team["id"]).execute().data
             def get_classification(sample_id):
                 for classification in classifications:
                     if classification["sample_id"] == sample_id:
@@ -126,8 +143,15 @@ else:
             
             for sample in all_samples:
                 classification_id = 1 if sample["isreal"] else 0
-                classification = st.selectbox("classification",["fake","real"],index=classification_id,key=f"cb_{sample["id"]}")
-                if st.button("Submit", key=sample["id"]):
+                
+                col1, col2, col3 = st.columns([4, 1, 1])
+                with col1:
+                    st.write(sample["content"])
+                with col2:
+                    classification = st.selectbox("classification",["fake","real"],index=classification_id,key=f"cb_{sample["id"]}",label_visibility="collapsed")
+                with col3:
+                    submit_button=st.button("Submit", key=sample["id"])
+                if submit_button:
                     if has_classification(sample["id"]):
                         conn.table("classifications").update({"isreal": classification == "real"}).eq("sample_id", sample["id"]).execute()
                     else:
