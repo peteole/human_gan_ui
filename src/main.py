@@ -105,8 +105,40 @@ else:
         
         if game["phase"] == "discrimination":
             st.header("Discrimination phase")
-        
-        
-    
+            classifications = conn.table("classifications").select("sample_id,isreal").eq("team",team["id"]).execute().data
+            st.dataframe(classifications, use_container_width=True)
+            reals = conn.table("reals").select("id,content").eq("game",game["id"]).execute().data
+            fakes = conn.table("fakes").select("id,content").eq("team",team["id"]).execute().data
+            def get_classification(sample_id):
+                for classification in classifications:
+                    if classification["sample_id"] == sample_id:
+                        return classification["isreal"]
+                return False
+            def has_classification(sample_id):
+                for classification in classifications:
+                    if classification["sample_id"] == sample_id:
+                        return True
+                return False
+            reals = [{'id': real['id'], 'content': real['content'], 'isreal': get_classification(real["id"]), "classification": True} for real in reals]
+            fakes = [{'id': fake['id'], 'content': fake['content'], 'isreal': get_classification(fake["id"]), "classification": False} for fake in fakes]
+            all_samples = reals + fakes
+            all_samples = sorted(all_samples, key=lambda sample: sample["content"])
+            
+            for sample in all_samples:
+                classification_id = 1 if sample["isreal"] else 0
+                classification = st.selectbox("classification",["fake","real"],index=classification_id,key=f"cb_{sample["id"]}")
+                if st.button("Submit", key=sample["id"]):
+                    if has_classification(sample["id"]):
+                        conn.table("classifications").update({"isreal": classification == "real"}).eq("sample_id", sample["id"]).execute()
+                    else:
+                        conn.table("classifications").insert({"sample_id": sample["id"], "isreal": classification == "real", "team": team["id"]}).execute()
+                    st.rerun()
+            # all_samples = reals + fakes
+            # all_samples = all_samples.sort(key=lambda sample: sample["content"])
+            # for sample in all_samples:
+            #     is_real = st.radio(sample["content"],["real","fake"])
+            #     if st.button("Submit"):
+            #         conn.table("classifications").upsert({"sample_id": sample["id"], "isreal": is_real, "team": team["id"]}).execute()
+            #         st.rerun()
     
 
