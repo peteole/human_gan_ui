@@ -40,8 +40,6 @@ else:
         st.rerun()
     game = conn.table("games").select("*").eq("id",st.query_params["game_id"]).execute().data[0]
     teams = conn.table("teams").select("*").eq("game",game["id"]).execute().data
-    #st.write(game)
-    st.write(f"Game ID: {st.query_params['game_id']}")
     is_admin = False
     if "game_password" in st.query_params:
         if st.query_params["game_password"] == game["password"]:
@@ -157,6 +155,48 @@ else:
                     else:
                         conn.table("classifications").insert({"sample_id": sample["id"], "isreal": classification == "real", "team": team["id"]}).execute()
                     st.rerun()
-
+        if game["phase"] == "done":
+            st.header("Results")
+            classifications = conn.table("classifications").select("sample_id,isreal").eq("team",team["id"]).execute().data
+            reals = conn.table("reals").select("id,content").eq("game",game["id"]).eq("is_training_sample",False).execute().data
+            all_teams = conn.table("teams").select("*").eq("game",game["id"]).execute().data
+            fakes_by_team = {}
+            for t in all_teams:
+                fakes_by_team[t["id"]] = conn.table("fakes").select("id,content").eq("team",t["id"]).execute().data
+            def get_origin(sample_id):
+                for t in all_teams:
+                    for fake in fakes_by_team[t["id"]]:
+                        if fake["id"] == sample_id:
+                            return t["id"]
+                if sample_id in [real["id"] for real in reals]:
+                    return "real"
+                return "unknown"
+            def get_classification(sample_id):
+                for classification in classifications:
+                    if classification["sample_id"] == sample_id:
+                        return classification["isreal"]
+                return False
+            def get_team_name(team_id):
+                if team_id == "real":
+                    return "real"
+                for t in all_teams:
+                    if t["id"] == team_id:
+                        return t["name"]
+                return "unknown"
+            
+            # reals = [{'content': real['content'], 'classification': get_classification(real["id"]),"real origin":get_origin(real["id"])} for real in reals]
+            all_samples = []
+            for real in reals:
+                classification = get_classification(real["id"])
+                all_samples.append({'content': real['content'], 'classified as real': classification, "real origin":"real", "team": "real"})
+            
+            for team in all_teams:
+                for fake in fakes_by_team[team["id"]]:
+                    real_origin = get_origin(fake["id"])
+                    classification = get_classification(fake["id"])
+                    all_samples.append({'content': fake['content'], 'classified as real': classification, "real origin":get_team_name(real_origin), "team": team["name"]})
+            shuffle(all_samples)
+            st.dataframe(all_samples, use_container_width=True)
+            
     
 
